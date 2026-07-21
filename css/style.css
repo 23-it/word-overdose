@@ -261,6 +261,73 @@ body {
   cursor: default;
 }
 
+/* カウントダウン */
+.countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 140px;
+  z-index: 30;
+  color: var(--cyan);
+  text-shadow: 0 0 30px var(--cyan), 0 0 60px var(--magenta);
+  pointer-events: none;
+}
+.countdown.hidden {
+  display: none;
+}
+.countdown.pop {
+  animation: cd-pop 0.5s ease-out;
+}
+@keyframes cd-pop {
+  0% {
+    transform: scale(2.4);
+    opacity: 0;
+    filter: blur(8px);
+  }
+  30% {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+}
+
+/* コンボ数字の跳ね */
+.combo-num.bump {
+  animation: combo-bump 0.28s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes combo-bump {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.5) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 単語カードの着弾パンチ */
+.word-en.hit {
+  animation: word-hit 0.25s ease-out;
+}
+@keyframes word-hit {
+  0% {
+    transform: scale(1.15);
+    filter: brightness(2);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
 /* FEVERモード時の画面フレーム（Phase 4で強化） */
 #app.fever::before {
   content: '';

@@ -3,6 +3,15 @@
 import { buildSession } from '../core/quiz.js';
 import { ComboState } from '../core/combo.js';
 import { questionScore, rankForScore } from '../core/score.js';
+import * as bgm from '../audio/bgm.js';
+
+// コンボ数 → BGMレイヤー(0..3)。倍率の段に合わせる。
+function layerForCombo(combo) {
+  if (combo >= 20) return 3;
+  if (combo >= 10) return 2;
+  if (combo >= 5) return 1;
+  return 0;
+}
 
 const QUESTIONS_PER_GAME = 20;
 const BASE_TIME_MS = 7000; // 初期制限時間
@@ -30,6 +39,7 @@ export function initGame(appCtx) {
   el.word = document.getElementById('game-word');
   el.choices = document.getElementById('game-choices');
   el.app = document.getElementById('app');
+  el.countdown = document.getElementById('game-countdown');
 }
 
 export function startGame(appCtx) {
@@ -46,7 +56,42 @@ export function startGame(appCtx) {
   correctCount = 0;
   combo = new ComboState();
   el.app.classList.remove('fever');
-  renderQuestion();
+  bgm.startBgm();
+  bgm.setBgmLayer(0);
+  bgm.setFever(false);
+  el.word.textContent = '';
+  el.choices.innerHTML = '';
+  runCountdown(() => renderQuestion());
+}
+
+// START直後のカウントダウン演出（3・2・1・GO）。
+function runCountdown(done) {
+  const seq = [
+    { label: '3', n: 3 },
+    { label: '2', n: 2 },
+    { label: '1', n: 1 },
+    { label: 'GO!', n: 1 },
+  ];
+  let i = 0;
+  const overlay = el.countdown;
+  overlay.classList.remove('hidden');
+  const tick = () => {
+    if (i >= seq.length) {
+      overlay.classList.add('hidden');
+      done();
+      return;
+    }
+    const s = seq[i++];
+    overlay.textContent = s.label;
+    overlay.classList.remove('pop');
+    // reflow でアニメ再start
+    void overlay.offsetWidth;
+    overlay.classList.add('pop');
+    ctx.sfx.playCountdownTick(s.n);
+    ctx.effects.flash(s.label === 'GO!' ? 'var(--cyan)' : '#ffffff');
+    setTimeout(tick, s.label === 'GO!' ? 350 : 500);
+  };
+  tick();
 }
 
 function currentTimeLimit() {
@@ -84,6 +129,11 @@ function updateComboDisplay(animate) {
     el.combo.classList.remove('hidden');
     el.combo.textContent = combo.combo;
     el.mult.textContent = combo.multiplier > 1 ? `${combo.multiplier}x` : '';
+    if (animate) {
+      el.combo.classList.remove('bump');
+      void el.combo.offsetWidth;
+      el.combo.classList.add('bump');
+    }
   } else {
     el.combo.classList.add('hidden');
     el.mult.textContent = '';
@@ -126,18 +176,27 @@ function onAnswer(choiceIndex, btnEl) {
     btnEl.classList.add('correct');
     el.score.textContent = score;
     updateComboDisplay(true);
+    el.word.classList.remove('hit');
+    void el.word.offsetWidth;
+    el.word.classList.add('hit');
 
-    // 演出・音（Phase 3-4で中身が入る）
+    // BGMレイヤーをコンボ段に合わせる
+    bgm.setBgmLayer(layerForCombo(res.combo));
+
+    // 演出・音
     ctx.sfx.playCorrect(res.combo);
     ctx.effects.burstCorrect(centerXOf(btnEl), centerYOf(btnEl), res.combo);
-    if (res.multiplierUp) ctx.effects.shake(1 + res.multiplier / 8);
+    ctx.effects.hitStop(res.multiplierUp ? 70 : 45);
+    ctx.effects.shake(res.multiplierUp ? 1.5 + res.multiplier / 8 : 0.6);
     if (res.enteredFever) {
       el.app.classList.add('fever');
+      bgm.setFever(true);
       ctx.sfx.playFeverStart();
       ctx.effects.feverBackground(true);
     }
     if (res.feverEnded) {
       el.app.classList.remove('fever');
+      bgm.setFever(false);
       ctx.effects.feverBackground(false);
     }
   } else {
@@ -146,11 +205,15 @@ function onAnswer(choiceIndex, btnEl) {
     btnEl.classList.add('wrong');
     el.choices.children[q.answerIndex].classList.add('correct');
     updateComboDisplay(false);
+    bgm.setBgmLayer(0);
+    bgm.duckForMiss();
     ctx.sfx.playMiss();
     ctx.effects.flash('var(--red)');
-    ctx.effects.shake(1.5);
+    ctx.effects.shake(2.2);
+    ctx.effects.comboShatter(res.lostCombo);
     if (res.feverEnded) {
       el.app.classList.remove('fever');
+      bgm.setFever(false);
       ctx.effects.feverBackground(false);
     }
   }
@@ -164,11 +227,15 @@ function onTimeout() {
   answered = true;
   const q = session[index];
   ctx.store.recordWord(q.word.en, false);
-  combo.miss();
+  const res = combo.miss();
   el.choices.children[q.answerIndex].classList.add('correct');
   updateComboDisplay(false);
+  bgm.setBgmLayer(0);
+  bgm.setFever(false);
+  bgm.duckForMiss();
   ctx.sfx.playMiss();
   ctx.effects.flash('var(--red)');
+  ctx.effects.comboShatter(res.lostCombo);
   el.app.classList.remove('fever');
   disableChoices();
   setTimeout(nextQuestion, 1100);
@@ -189,6 +256,7 @@ function nextQuestion() {
 
 function finishGame() {
   cancelAnimationFrame(timer.raf);
+  bgm.stopBgm();
   const rank = rankForScore(score);
   const accuracy = Math.round((correctCount / session.length) * 100);
   ctx.navigate('result', {

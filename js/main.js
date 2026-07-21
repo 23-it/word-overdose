@@ -5,7 +5,7 @@ import { WORDS } from './data/words.js';
 import * as engine from './audio/engine.js';
 import * as sfx from './audio/sfx.js';
 import * as effects from './fx/effects.js';
-import { initCanvas, start as startCanvas } from './fx/canvas.js';
+import { initCanvas, start as startCanvas, registerEffects } from './fx/canvas.js';
 
 import { initHome, showHome } from './screens/home.js';
 import { initGame, startGame } from './screens/game.js';
@@ -67,6 +67,8 @@ function bindAudioUnlock() {
 function boot() {
   // FXレイヤー
   initCanvas(document.getElementById('fx-canvas'));
+  effects.initEffects(document.getElementById('app'));
+  registerEffects({ update: effects.update });
   startCanvas();
 
   // 設定をエフェクト強度に反映
