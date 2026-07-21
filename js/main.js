@@ -83,7 +83,9 @@ function boot() {
   bindAudioUnlock();
   navigate('home');
 
-  // Service Worker は Phase 6（sw.js 追加）で有効化する。
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
 }
 
 boot();

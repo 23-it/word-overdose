@@ -1,0 +1,26 @@
+{
+  "name": "WORD OVERDOSE",
+  "short_name": "WORDOD",
+  "description": "ドーパミン全開の英単語コンボラッシュ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05030c",
+  "theme_color": "#05030c",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
