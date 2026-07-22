@@ -64,6 +64,16 @@ export function initEffects(appElement) {
   document.body.appendChild(veilDark);
   document.body.appendChild(veilLight);
 
+  // マウス追従。画面中心からのずれを -1..1 で受けておき、描画側で補間して使う。
+  window.addEventListener(
+    'mousemove',
+    (e) => {
+      mTargetX = (e.clientX / window.innerWidth - 0.5) * 2;
+      mTargetY = (e.clientY / window.innerHeight - 0.5) * 2;
+    },
+    { passive: true }
+  );
+
   // 揺れの速度に応じて「動いた向きだけ」ぼかすSVGフィルタ。
   // stdDeviation に x y を別々に入れると方向性ブラーになる。
   const NS = 'http://www.w3.org/2000/svg';
@@ -772,6 +782,13 @@ let swayT = 0;
 let prevX = 0, prevY = 0; // モーションブラー用に前フレーム位置を保持
 let blurOn = false;
 
+// マウス追従（小さめのパララックス）。目標値を補間して滑らかに寄せる。
+const MOUSE_AMP_X = 7; // px
+const MOUSE_AMP_Y = 5; // px
+const MOUSE_TILT = 0.35; // deg
+let mTargetX = 0, mTargetY = 0;
+let mX = 0, mY = 0;
+
 function applyDomTransform(dt) {
   if (!appEl) return;
   swayT += dt;
@@ -789,10 +806,15 @@ function applyDomTransform(dt) {
     zoomV += (-K_ZOOM * zoomP - D_ZOOM * zoomV) * s;
     zoomP += zoomV * s;
 
+    // --- マウス追従（補間して滑らかに寄せる）---
+    const follow = 1 - Math.pow(0.0005, s);
+    mX += (mTargetX - mX) * follow;
+    mY += (mTargetY - mY) * follow;
+
     // --- 連続ドリフト（メニューと同じ、据え置き）---
-    tx += Math.sin(swayT * 0.0016) * 3 + leanX;
-    ty += Math.cos(swayT * 0.0013) * 2 + bounceY;
-    rot += Math.sin(swayT * 0.0011) * 0.4 + leanX * 0.12; // 横揺れに傾きを連動
+    tx += Math.sin(swayT * 0.0016) * 3 + leanX + mX * MOUSE_AMP_X;
+    ty += Math.cos(swayT * 0.0013) * 2 + bounceY + mY * MOUSE_AMP_Y;
+    rot += Math.sin(swayT * 0.0011) * 0.4 + leanX * 0.12 + mX * MOUSE_TILT; // 横揺れ・マウスに傾きを連動
     scale *= 1 + zoomP;
   }
 
