@@ -262,6 +262,10 @@ function nextQuestion() {
 function finishGame() {
   cancelAnimationFrame(timer.raf);
   bgm.stopBgm();
+  // FEVER中に終局した場合、状態が残るとリザルトでも背景演出が走り続けるので必ず解除。
+  el.app.classList.remove('fever');
+  bgm.setFever(false);
+  ctx.effects.feverBackground(false);
   const rank = rankForScore(score);
   const accuracy = Math.round((correctCount / session.length) * 100);
   ctx.navigate('result', {

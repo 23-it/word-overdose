@@ -69,7 +69,11 @@ function boot() {
   // FXレイヤー
   initCanvas(document.getElementById('fx-canvas'));
   effects.initEffects(document.getElementById('app'));
-  registerEffects({ update: effects.update, motionBlur: effects.motionBlurOn });
+  registerEffects({
+    update: effects.update,
+    motionBlur: effects.motionBlurOn,
+    hasContent: effects.hasCanvasContent,
+  });
   bgm.setBeatCallback(effects.beat); // 画面の揺れをBGMのキックに同期
   startCanvas();
 

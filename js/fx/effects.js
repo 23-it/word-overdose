@@ -319,6 +319,22 @@ export function isReduced() {
 export function motionBlurOn() {
   return intensity !== 'reduced';
 }
+
+// キャンバスに描くものがあるか（無ければ全画面塗りを省ける）。
+export function hasCanvasContent() {
+  return !!(
+    particles.count ||
+    state.rings.length ||
+    state.radials.length ||
+    state.stars.length ||
+    state.floats.length ||
+    state.shatter.length ||
+    state.flash ||
+    state.aura ||
+    state.fever ||
+    state.bgFlash > 0.01
+  );
+}
 function k() {
   // reduced時は演出量を落とす係数
   return intensity === 'reduced' ? 0.4 : 1;
@@ -494,13 +510,13 @@ function drawFeverBg(ctx, w, h, t) {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const hue = (t * 0.15) % 360;
-  const lines = 14;
+  const lines = 9; // 本数を絞る（見た目はほぼ変わらず描画量が減る）
+  ctx.globalAlpha = 0.13 * (intensity === 'reduced' ? 0.4 : 1);
+  ctx.lineWidth = 2;
   for (let i = 0; i < lines; i++) {
-    const p = ((t * 0.0004 + i / lines) % 1);
+    const p = (t * 0.0004 + i / lines) % 1;
     const y = p * h;
-    ctx.globalAlpha = 0.12 * (intensity === 'reduced' ? 0.4 : 1);
-    ctx.strokeStyle = `hsl(${(hue + i * 25) % 360}, 100%, 60%)`;
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = `hsl(${(hue + i * 38) % 360}, 100%, 60%)`;
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y + Math.sin(t * 0.003 + i) * 20);
@@ -508,6 +524,8 @@ function drawFeverBg(ctx, w, h, t) {
   }
   ctx.restore();
 }
+
+const auraGradCache = { key: '', grad: null };
 
 function drawAura(ctx, w, h, dt) {
   if (!state.aura) return;
@@ -520,12 +538,19 @@ function drawAura(ctx, w, h, dt) {
   }
   const heat = HEAT[a.level];
   const alpha = Math.sin(p * Math.PI) * 0.4 * (intensity === 'reduced' ? 0.4 : 1);
-  const cx = w / 2;
-  const cy = h * 0.42;
-  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.75);
-  grad.addColorStop(0, 'transparent');
-  grad.addColorStop(0.6, 'transparent');
-  grad.addColorStop(1, heat.glow);
+  // グラデーションは毎フレーム作ると重いので (サイズ, 色) 単位でキャッシュする。
+  const key = `${w}x${h}:${heat.glow}`;
+  let grad = auraGradCache.key === key ? auraGradCache.grad : null;
+  if (!grad) {
+    const cx = w / 2;
+    const cy = h * 0.42;
+    grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.75);
+    grad.addColorStop(0, 'transparent');
+    grad.addColorStop(0.6, 'transparent');
+    grad.addColorStop(1, heat.glow);
+    auraGradCache.key = key;
+    auraGradCache.grad = grad;
+  }
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = alpha;
@@ -712,8 +737,8 @@ export function beat(strength = 1) {
 function updateBeatVeils(dt) {
   if (!veilLight || !veilDark) return;
   if (intensity === 'reduced') {
-    veilLight.style.opacity = '0';
-    veilDark.style.opacity = '0';
+    setVeil(veilLight, 0, 'l');
+    setVeil(veilDark, 0, 'd');
     return;
   }
   beatPhase += dt;
@@ -730,8 +755,17 @@ function updateBeatVeils(dt) {
     dark = beatStr * (1 - Math.exp(-q / 50)) * Math.exp(-q / 180);
   }
 
-  veilLight.style.opacity = Math.min(0.2, light * 0.09 * boost).toFixed(3);
-  veilDark.style.opacity = Math.min(0.3, dark * 0.22 * boost).toFixed(3);
+  setVeil(veilLight, Math.min(0.2, light * 0.09 * boost), 'l');
+  setVeil(veilDark, Math.min(0.3, dark * 0.22 * boost), 'd');
+}
+
+// 同じ値を書き続けると無駄なスタイル再計算が走るので、変化した時だけ書く。
+const lastVeil = { l: -1, d: -1 };
+function setVeil(el, v, key) {
+  const q = Math.round(v * 200) / 200; // 0.005刻みに量子化
+  if (lastVeil[key] === q) return;
+  lastVeil[key] = q;
+  el.style.opacity = q === 0 ? '0' : q.toFixed(3);
 }
 
 let swayT = 0;

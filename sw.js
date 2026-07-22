@@ -2,7 +2,7 @@
 // 戦略: 同一オリジンは network-first（オンライン時は常に最新を配信し、キャッシュも更新）。
 // オフライン時のみキャッシュにフォールバックするので、更新の取りこぼしが起きない。
 
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 const CACHE_NAME = `dopagaki-${CACHE_VERSION}`;
 
 const ASSETS = [

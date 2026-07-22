@@ -59,6 +59,8 @@ body::before {
   z-index: -2;
   animation: drift 22s ease-in-out infinite alternate;
   pointer-events: none;
+  /* 一度ラスタライズして合成だけで動かす（毎フレームの再描画を防ぐ） */
+  will-change: transform;
 }
 @keyframes drift {
   to {
@@ -114,8 +116,9 @@ body::after {
   border: 1.5px solid var(--glass-brd);
 }
 .choice {
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  /* 画面が常時揺れる＝毎フレーム再合成されるので半径は小さめに抑える */
+  backdrop-filter: blur(6px) saturate(1.4);
+  -webkit-backdrop-filter: blur(6px) saturate(1.4);
 }
 
 /* ===== 画面切り替え ===== */
