@@ -183,11 +183,15 @@ function onAnswer(choiceIndex, btnEl) {
     // BGMレイヤーをコンボ段に合わせる
     bgm.setBgmLayer(layerForCombo(res.combo));
 
-    // 演出・音
+    // 演出・音（パチンコ風の総合演出）
     ctx.sfx.playCorrect(res.combo);
-    ctx.effects.burstCorrect(centerXOf(btnEl), centerYOf(btnEl), res.combo);
-    ctx.effects.hitStop(res.multiplierUp ? 70 : 45);
-    ctx.effects.shake(res.multiplierUp ? 1.5 + res.multiplier / 8 : 0.6);
+    ctx.effects.celebrate(centerXOf(btnEl), centerYOf(btnEl), {
+      combo: res.combo,
+      multiplier: res.multiplier,
+      multiplierUp: res.multiplierUp,
+      enteredFever: res.enteredFever,
+      milestone: res.combo > 0 && res.combo % 10 === 0,
+    });
     if (res.enteredFever) {
       el.app.classList.add('fever');
       bgm.setFever(true);
