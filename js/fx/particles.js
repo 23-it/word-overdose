@@ -1,7 +1,7 @@
 // particles.js — パーティクルシステム（Canvas 2D）。
 
 export class ParticleSystem {
-  constructor(max = 800) {
+  constructor(max = 2200) {
     this.max = max;
     this.list = [];
   }
@@ -59,8 +59,9 @@ export class ParticleSystem {
       ctx.globalAlpha = alpha;
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = p.color;
+      // 大量描画でも軽いよう shadowBlur は控えめ（glow は lighter 合成で稼ぐ）
       ctx.shadowColor = p.color;
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 6;
       ctx.translate(p.x, p.y);
       ctx.rotate(p.rot);
       const s = p.size;

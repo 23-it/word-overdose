@@ -1,7 +1,8 @@
-// sw.js — Service Worker。全アセットをプリキャッシュし cache-first で完全オフライン動作。
-// アセットを変えたら CACHE_VERSION を上げること（古いキャッシュは activate で破棄）。
+// sw.js — Service Worker。
+// 戦略: 同一オリジンは network-first（オンライン時は常に最新を配信し、キャッシュも更新）。
+// オフライン時のみキャッシュにフォールバックするので、更新の取りこぼしが起きない。
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `dopagaki-${CACHE_VERSION}`;
 
 const ASSETS = [
@@ -49,18 +50,19 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  const sameOrigin = new URL(e.request.url).origin === location.origin;
+  if (!sameOrigin) return; // 外部リソースはそのまま
+
+  // network-first: まずネットワーク→成功したらキャッシュ更新、失敗時のみキャッシュ
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(
-      (cached) =>
-        cached ||
-        fetch(e.request).then((res) => {
-          // 同一オリジンの新規リソースはキャッシュに追加
-          if (res.ok && new URL(e.request.url).origin === location.origin) {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
-          }
-          return res;
-        })
-    )
+    fetch(e.request)
+      .then((res) => {
+        if (res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(e.request, { ignoreSearch: true }))
   );
 });

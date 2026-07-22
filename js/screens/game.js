@@ -191,6 +191,7 @@ function onAnswer(choiceIndex, btnEl) {
       multiplierUp: res.multiplierUp,
       enteredFever: res.enteredFever,
       milestone: res.combo > 0 && res.combo % 10 === 0,
+      score: gained,
     });
     if (res.enteredFever) {
       el.app.classList.add('fever');

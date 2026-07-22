@@ -18,6 +18,9 @@ const state = {
   radials: [], // 集中線（回転スピードライン）
   rings: [], // 衝撃波リング
   aura: null, // 激アツ度に応じた放射オーラ { level, t, dur }
+  stars: [], // インパクトスター（十字閃光）
+  floats: [], // 飛び出すスコア文字
+  bgFlash: 0, // 毎回の全画面バックフラッシュ
 };
 
 const COMBO_COLORS = [
@@ -48,42 +51,126 @@ export function initEffects(appElement) {
   document.body.appendChild(cutinEl);
 }
 
-// 正解の総合演出（パチンコ風）。game.js からはこれ一本を呼ぶ。
-// o: { combo, multiplier, multiplierUp, enteredFever, milestone }
+// 低コンボでも出す景気づけワード（毎回カットインを出すため）。
+const HYPE_WORDS = ['NICE!!', 'GREAT!!', 'COOL!!', 'YEAH!!', 'ナイス!!', 'PERFECT!!', 'AWESOME!!'];
+
+// 正解の総合演出（パチンコ風・全部盛り）。game.js からはこれ一本を呼ぶ。
+// o: { combo, multiplier, multiplierUp, enteredFever, milestone, score }
+// 方針: 「毎回が大当り級」。1問目から確定演出レベルの物量をぶっぱなす。
 export function celebrate(x, y, o = {}) {
   const level = heatLevel(o);
   const heat = HEAT[level];
+  const b = 1 + level * 0.35; // 熱さ倍率
 
-  // 基本: パーティクル爆発＋ヒットストップ＋シェイク＋ズームパンチ
+  // === 毎回必ず出る超派手ベース ===
+  // 多層メガ爆発
+  megaExplosion(x, y, heat, b);
   burstCorrect(x, y, o.combo || 0);
-  hitStop(level >= 2 ? 90 : o.multiplierUp ? 70 : 45);
-  shake(0.6 + level * 0.9);
-  state.punch = Math.max(state.punch, 1 + level * 0.4);
 
-  // 衝撃波リング（熱いほど多重）
-  ring(x, y, heat.glow);
-  if (level >= 2) ring(x, y, heat.colors[1], 90);
-  if (level >= 3) ring(x, y, '#ffffff', 180);
+  // 全画面バックフラッシュ＋色フラッシュ（毎回）
+  state.bgFlash = Math.max(state.bgFlash, 0.85);
+  strobe(heat.colors, 2 + level, 50);
 
-  // 集中線（激アツ以上）
-  if (level >= 2) radialLines(x, y, heat.glow, level);
+  // 十字インパクトスター（毎回・特大）
+  impactStar(x, y, '#ffffff', 1.4);
+  impactStar(x, y, heat.glow, 1.0);
 
-  // オーラ（画面全体の放射グラデ）
-  if (level >= 1) state.aura = { level, t: 0, dur: 500 + level * 150 };
+  // 衝撃波リング（毎回3連＋熱さで追加）
+  ring(x, y, '#ffffff');
+  ring(x, y, heat.colors[0], 70);
+  ring(x, y, heat.colors[1] || heat.colors[0], 150);
+  if (level >= 2) ring(x, y, heat.glow, 230);
 
-  // フラッシュ／ストロボ
-  if (level >= 4) strobe(heat.colors, 6, 55);
-  else if (level >= 3) strobe(['#fff3b0', '#ffd400'], 3, 60);
-  else if (level >= 1) flashColor(heat.colors[0], 0.35);
+  // 集中線（毎回）
+  radialLines(x, y, heat.glow, Math.max(2, level + 1));
 
-  // コイン/スターシャワー（激熱以上）
-  if (level >= 3) coinShower(level);
+  // 放射オーラ（毎回）
+  state.aura = { level: Math.max(1, level), t: 0, dur: 480 + level * 150 };
 
-  // カットイン文字
-  let text = heat.name;
+  // 紙吹雪＆スターシャワー（毎回、上から降らす）
+  confetti(heat.colors, 18 + level * 10);
+  if (level >= 2) coinShower(level + 1);
+
+  // 強ヒットストップ＋大ズーム＋大シェイク（毎回）
+  hitStop(70 + level * 20);
+  shake((2.0 + level * 0.9) * b);
+  state.punch = Math.max(state.punch, 1.8 + level * 0.5);
+
+  // 飛び出すスコア文字（毎回）
+  if (o.score) floatText(x, y, '+' + o.score, heat.colors[0]);
+
+  // カットイン文字（毎回。低コンボは景気づけワード）
+  let text = HYPE_WORDS[(o.combo || 0) % HYPE_WORDS.length];
+  let cls = heat.cls;
+  if (level >= 1) text = heat.name;
   if (o.milestone && o.combo) text = `${o.combo} COMBO!!`;
   if (o.enteredFever) text = 'FEVER!!';
-  if (text) showCutin(text, heat.cls, level);
+  showCutin(text, cls, level);
+}
+
+// 多層メガ爆発。放射・上昇噴水・きらめきの3レイヤーを一気に。
+function megaExplosion(x, y, heat, b = 1) {
+  const kk = k();
+  // 放射（全方向）
+  particles.emit(x, y, {
+    count: Math.round(70 * b * kk),
+    speed: 8 * b,
+    spread: Math.PI * 2,
+    colors: heat.colors,
+    size: 5,
+    life: 750,
+    gravity: 0.04,
+  });
+  // 高速の細かい破片
+  particles.emit(x, y, {
+    count: Math.round(50 * b * kk),
+    speed: 13 * b,
+    spread: Math.PI * 2,
+    colors: [...heat.colors, '#ffffff'],
+    size: 3,
+    life: 550,
+    gravity: 0.02,
+  });
+  // 上向き噴水
+  particles.emit(x, y, {
+    count: Math.round(30 * b * kk),
+    speed: 12 * b,
+    spread: Math.PI / 2.5,
+    angle: -Math.PI / 2,
+    colors: heat.colors,
+    size: 6,
+    life: 950,
+    gravity: 0.06,
+    shape: 'circle',
+  });
+}
+
+// 紙吹雪: 画面上部の全幅から降らす。
+export function confetti(colors, count = 24) {
+  const w = window.innerWidth;
+  const n = Math.round(count * k());
+  for (let i = 0; i < n; i++) {
+    particles.emit(Math.random() * w, -12, {
+      count: 1,
+      speed: 1 + Math.random() * 3,
+      spread: 0.6,
+      angle: Math.PI / 2,
+      colors,
+      size: 6 + Math.random() * 8,
+      life: 1500,
+      gravity: 0.05,
+    });
+  }
+}
+
+// 十字インパクトスター（パチンコの閃光）。
+export function impactStar(x, y, color = '#ffffff', scale = 1) {
+  state.stars.push({ x, y, life: 380, maxLife: 380, color, scale, rot: Math.random() * Math.PI });
+}
+
+// 飛び出すスコア文字。
+export function floatText(x, y, text, color = '#ffe600') {
+  state.floats.push({ x, y, vy: -1.4, life: 900, maxLife: 900, text, color });
 }
 
 function heatLevel(o) {
@@ -187,7 +274,7 @@ function k() {
 export function burstCorrect(x, y, combo = 0) {
   const tier = combo >= 20 ? 3 : combo >= 10 ? 2 : combo >= 5 ? 1 : 0;
   const colors = COMBO_COLORS[tier];
-  const count = Math.round((18 + tier * 14) * k());
+  const count = Math.round((60 + tier * 30) * k());
   particles.emit(x, y, {
     count,
     speed: 5 + tier * 1.5,
@@ -272,6 +359,9 @@ export function resetAll() {
   state.radials.length = 0;
   state.rings.length = 0;
   state.aura = null;
+  state.stars.length = 0;
+  state.floats.length = 0;
+  state.bgFlash = 0;
   if (appEl) appEl.style.transform = '';
   if (cutinEl) {
     cutinEl.className = 'cutin hidden';
@@ -292,6 +382,17 @@ export function update(dt, ctx, w, h) {
     drawFeverBg(ctx, w, h, state.feverT);
   }
 
+  // 全画面バックフラッシュ（毎回の正解でパッと明るく）
+  if (state.bgFlash > 0.01) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = state.bgFlash * (intensity === 'reduced' ? 0.4 : 1);
+    ctx.fillStyle = '#2a2350';
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    state.bgFlash -= dt / 200;
+  }
+
   // 激アツオーラ（放射グラデ）
   drawAura(ctx, w, h, dt);
 
@@ -303,6 +404,12 @@ export function update(dt, ctx, w, h) {
 
   // パーティクル
   particles.update(pdt, ctx);
+
+  // インパクトスター
+  drawStars(ctx, pdt);
+
+  // 飛び出すスコア文字
+  drawFloats(ctx, pdt);
 
   // コンボ破砕片
   drawShatter(ctx, pdt);
@@ -421,6 +528,77 @@ function drawRings(ctx, dt) {
     ctx.beginPath();
     ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawStars(ctx, dt) {
+  for (let i = state.stars.length - 1; i >= 0; i--) {
+    const s = state.stars[i];
+    s.life -= dt;
+    if (s.life <= 0) {
+      state.stars.splice(i, 1);
+      continue;
+    }
+    const p = 1 - s.life / s.maxLife;
+    const alpha = Math.max(0, 1 - p);
+    const len = (60 + p * 260) * s.scale;
+    const thick = (10 + (1 - p) * 22) * s.scale;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = s.color;
+    ctx.shadowColor = s.color;
+    ctx.shadowBlur = 20;
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.rot);
+    // 十字＋斜め（8方向っぽい閃光）
+    for (let a = 0; a < 4; a++) {
+      ctx.rotate(Math.PI / 2);
+      const l = a % 2 === 0 ? len : len * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-thick / 2, -l * 0.5);
+      ctx.lineTo(0, -l);
+      ctx.lineTo(thick / 2, -l * 0.5);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // 中心のまぶしい玉
+    ctx.beginPath();
+    ctx.arc(0, 0, thick * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawFloats(ctx, dt) {
+  const f = dt / 16.67;
+  for (let i = state.floats.length - 1; i >= 0; i--) {
+    const t = state.floats[i];
+    t.life -= dt;
+    if (t.life <= 0) {
+      state.floats.splice(i, 1);
+      continue;
+    }
+    const p = 1 - t.life / t.maxLife;
+    t.y += t.vy * f;
+    t.vy *= 0.96;
+    const alpha = Math.max(0, 1 - p);
+    const scale = 1 + (1 - t.life / t.maxLife) * 0.4;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(t.x, t.y);
+    ctx.scale(scale, scale);
+    ctx.font = '900 34px "Arial Black", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = t.color;
+    ctx.shadowColor = t.color;
+    ctx.shadowBlur = 14;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.strokeText(t.text, 0, 0);
+    ctx.fillText(t.text, 0, 0);
     ctx.restore();
   }
 }
