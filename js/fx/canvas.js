@@ -36,8 +36,18 @@ export function start() {
     const dt = Math.min(50, now - last);
     last = now;
     if (ctx) {
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      if (effects && effects.update) effects.update(dt, ctx, window.innerWidth, window.innerHeight);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (effects && effects.motionBlur && effects.motionBlur()) {
+        // 残像: destination-out で既存を少しずつ透明化（黒で塗らないのでDOMは隠さない）。
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(0, 0, w, h);
+        ctx.globalCompositeOperation = 'source-over';
+      } else {
+        ctx.clearRect(0, 0, w, h);
+      }
+      if (effects && effects.update) effects.update(dt, ctx, w, h);
     }
     requestAnimationFrame(loop);
   };

@@ -68,7 +68,7 @@ function boot() {
   // FXレイヤー
   initCanvas(document.getElementById('fx-canvas'));
   effects.initEffects(document.getElementById('app'));
-  registerEffects({ update: effects.update });
+  registerEffects({ update: effects.update, motionBlur: effects.motionBlurOn });
   startCanvas();
 
   // 設定をエフェクト強度に反映

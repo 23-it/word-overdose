@@ -23,21 +23,21 @@ const state = {
   bgFlash: 0, // 毎回の全画面バックフラッシュ
 };
 
-// 金基調の粒色（コンボ段階で少しずつ白金へ）。
+// 極彩ネオンの粒色（テトリス7色ベース）。
 const COMBO_COLORS = [
-  ['#f8ecc0', '#d4af37', '#ffffff'],
-  ['#f8ecc0', '#ffe9a8', '#d4af37'],
-  ['#fff3c8', '#ffd76a', '#d4af37'],
-  ['#ffffff', '#fff0b8', '#ffd76a', '#d4af37'],
+  ['#00eaff', '#2b7fff', '#ffffff'],
+  ['#2bff88', '#00eaff', '#ffffff'],
+  ['#ffe600', '#ff9500', '#ff3b5c'],
+  ['#ff2e97', '#c04bff', '#00eaff', '#2bff88'],
 ];
 
-// 度合い（0..4）。金の輝きが増していくラダー。文言も上質に。
+// 度合い（0..4）。ネオンが激しくなるラダー。文言はド派手に。
 const HEAT = [
-  { name: '', colors: ['#f8ecc0', '#d4af37', '#ffffff'], glow: '#d4af37', cls: 'h0' },
-  { name: 'FINE', colors: ['#f8ecc0', '#ffe9a8', '#d4af37'], glow: '#e8c874', cls: 'h1' },
-  { name: 'EXCELLENT', colors: ['#fff3c8', '#ffd76a', '#d4af37'], glow: '#f0d98c', cls: 'h2' },
-  { name: 'BRILLIANT', colors: ['#fff7e0', '#ffe9a8', '#ffd76a'], glow: '#ffd76a', cls: 'h3' },
-  { name: 'MASTERPIECE', colors: ['#ffffff', '#fff7e0', '#ffd76a', '#d4af37'], glow: '#ffffff', cls: 'h4' },
+  { name: '', colors: ['#00eaff', '#2b7fff', '#ffffff'], glow: '#00eaff', cls: 'h0' },
+  { name: 'NICE!!', colors: ['#2bff88', '#00eaff', '#ffffff'], glow: '#2bff88', cls: 'h1' },
+  { name: 'GREAT!!', colors: ['#00eaff', '#2b7fff', '#c04bff'], glow: '#00eaff', cls: 'h2' },
+  { name: 'INSANE!!', colors: ['#ffe600', '#ff9500', '#ff3b5c'], glow: '#ffe600', cls: 'h3' },
+  { name: 'GODLIKE!!', colors: ['#ff2e97', '#ffe600', '#00eaff', '#2bff88', '#c04bff'], glow: '#ffffff', cls: 'h4' },
 ];
 
 let cutinEl = null;
@@ -52,8 +52,8 @@ export function initEffects(appElement) {
   document.body.appendChild(cutinEl);
 }
 
-// 低コンボでも出す称賛ワード（毎回カットインを出すため）。上質めの語彙で。
-const HYPE_WORDS = ['GOOD', 'NICE', 'GREAT', 'SUPERB', 'SPLENDID', 'PERFECT', 'SUBLIME'];
+// 低コンボでも出す景気づけワード（毎回カットインを出すため）。
+const HYPE_WORDS = ['GO!!', 'YES!!', 'NICE!!', 'COOL!!', 'POG!!', 'HYPE!!', "LET'S GO!!"];
 
 // 正解の総合演出（パチンコ風・全部盛り）。game.js からはこれ一本を呼ぶ。
 // o: { combo, multiplier, multiplierUp, enteredFever, milestone, score }
@@ -104,8 +104,8 @@ export function celebrate(x, y, o = {}) {
   let text = HYPE_WORDS[(o.combo || 0) % HYPE_WORDS.length];
   let cls = heat.cls;
   if (level >= 1) text = heat.name;
-  if (o.milestone && o.combo) text = `${o.combo} COMBO`;
-  if (o.enteredFever) text = 'FEVER';
+  if (o.milestone && o.combo) text = `${o.combo} COMBO!!`;
+  if (o.enteredFever) text = 'FEVER!!';
   showCutin(text, cls, level);
 }
 
@@ -266,6 +266,10 @@ export function setIntensity(v) {
 export function isReduced() {
   return intensity === 'reduced';
 }
+// 残像（モーションブラー）を出すか。reduced では無効。
+export function motionBlurOn() {
+  return intensity !== 'reduced';
+}
 function k() {
   // reduced時は演出量を落とす係数
   return intensity === 'reduced' ? 0.4 : 1;
@@ -388,7 +392,7 @@ export function update(dt, ctx, w, h) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = state.bgFlash * (intensity === 'reduced' ? 0.4 : 1);
-    ctx.fillStyle = '#3a2c10';
+    ctx.fillStyle = '#241a4d';
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
     state.bgFlash -= dt / 200;
@@ -622,17 +626,26 @@ function drawShatter(ctx, dt) {
     ctx.globalAlpha = alpha;
     ctx.translate(s.x, s.y);
     ctx.rotate(s.rot);
-    ctx.fillStyle = '#d4af37';
-    ctx.shadowColor = '#f8ecc0';
+    ctx.fillStyle = '#00eaff';
+    ctx.shadowColor = '#c04bff';
     ctx.shadowBlur = 10;
     ctx.fillRect(-s.size / 2, -s.size / 6, s.size, s.size / 3);
     ctx.restore();
   }
 }
 
+let swayT = 0;
 function applyDomTransform(dt) {
   if (!appEl) return;
+  swayT += dt;
   let tf = '';
+  // 常時ゆれ（将来BGMに同期。今は一定テンポで揺らす）。reduced では無効。
+  if (intensity !== 'reduced') {
+    const sx = Math.sin(swayT * 0.0022) * 4 + Math.sin(swayT * 0.0014) * 2.5;
+    const sy = Math.cos(swayT * 0.0018) * 3.5 + Math.sin(swayT * 0.0026) * 1.5;
+    const sr = Math.sin(swayT * 0.0012) * 0.5;
+    tf += `translate(${sx.toFixed(2)}px, ${sy.toFixed(2)}px) rotate(${sr.toFixed(3)}deg) `;
+  }
   if (state.shake > 0.2) {
     const dx = (Math.random() - 0.5) * state.shake;
     const dy = (Math.random() - 0.5) * state.shake;
@@ -650,8 +663,8 @@ function applyDomTransform(dt) {
 }
 
 function resolveColor(c) {
-  if (c === 'var(--red)') return '#c23a54';
-  if (c === 'var(--cyan)') return '#f0d98c';
+  if (c === 'var(--red)') return '#ff3b5c';
+  if (c === 'var(--cyan)') return '#00eaff';
   if (c.startsWith('var(')) return '#ffffff';
   return c;
 }
