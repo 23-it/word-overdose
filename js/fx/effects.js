@@ -55,58 +55,76 @@ export function initEffects(appElement) {
 // 低コンボでも出す景気づけワード（毎回カットインを出すため）。
 const HYPE_WORDS = ['GO!!', 'YES!!', 'NICE!!', 'COOL!!', 'POG!!', 'HYPE!!', "LET'S GO!!"];
 
-// 正解の総合演出（パチンコ風・全部盛り）。game.js からはこれ一本を呼ぶ。
+// 正解の総合演出。game.js からはこれ一本を呼ぶ。
 // o: { combo, multiplier, multiplierUp, enteredFever, milestone, score }
-// 方針: 「毎回が大当り級」。1問目から確定演出レベルの物量をぶっぱなす。
+//
+// 設計方針（ドーパミン＆軽量化）:
+//  1. 通常ヒットは「キレ」重視で軽い（ヒットストップ・リング・少量の粒・スコアポップ）
+//  2. コンボで滑らかに増強＝登り感
+//  3. 節目(5/10)・FEVER は確定の大盤振る舞い
+//  4. ランダムに JACKPOT（変動報酬）。予測できない当たりが一番効く
+// 毎回フルパワーにしないのは、コントラストが無いと脳が慣れて効かなくなるため。
+const JACKPOT_CHANCE = 0.1;
+
 export function celebrate(x, y, o = {}) {
+  const combo = o.combo || 0;
   const level = heatLevel(o);
   const heat = HEAT[level];
-  const b = 1 + level * 0.35; // 熱さ倍率
+  const big = !!(o.milestone || o.enteredFever);
+  // 変動報酬: 節目以外でも低確率で大当りが降ってくる
+  const jackpot = !big && Math.random() < JACKPOT_CHANCE;
+  const grand = big || jackpot;
 
-  // === 毎回必ず出る超派手ベース ===
-  // 多層メガ爆発
-  megaExplosion(x, y, heat, b);
-  burstCorrect(x, y, o.combo || 0);
+  // === 毎回（軽量・キレ重視） ===
+  hitStop(50 + level * 10);
+  shake(0.8 + level * 0.5);
+  state.punch = Math.max(state.punch, 1.1 + level * 0.25);
 
-  // 全画面バックフラッシュ＋色フラッシュ（毎回）
-  state.bgFlash = Math.max(state.bgFlash, 0.85);
-  strobe(heat.colors, 2 + level, 50);
+  // 着弾の閃光とリング（安価で効く）
+  impactStar(x, y, '#ffffff', 0.8 + level * 0.15);
+  ring(x, y, heat.colors[0]);
 
-  // 十字インパクトスター（毎回・特大）
-  impactStar(x, y, '#ffffff', 1.4);
-  impactStar(x, y, heat.glow, 1.0);
+  // 粒は控えめに。コンボで少しずつ増える。
+  particles.emit(x, y, {
+    count: Math.round((16 + level * 7) * k()),
+    speed: 6 + level,
+    spread: Math.PI * 2,
+    colors: heat.colors,
+    size: 5,
+    life: 620,
+    gravity: 0.035,
+  });
 
-  // 衝撃波リング（毎回3連＋熱さで追加）
-  ring(x, y, '#ffffff');
-  ring(x, y, heat.colors[0], 70);
-  ring(x, y, heat.colors[1] || heat.colors[0], 150);
-  if (level >= 2) ring(x, y, heat.glow, 230);
-
-  // 集中線（毎回）
-  radialLines(x, y, heat.glow, Math.max(2, level + 1));
-
-  // 放射オーラ（毎回）
-  state.aura = { level: Math.max(1, level), t: 0, dur: 480 + level * 150 };
-
-  // 紙吹雪＆スターシャワー（毎回、上から降らす）
-  confetti(heat.colors, 18 + level * 10);
-  if (level >= 2) coinShower(level + 1);
-
-  // 強ヒットストップ＋大ズーム＋大シェイク（毎回）
-  hitStop(70 + level * 20);
-  shake((2.0 + level * 0.9) * b);
-  state.punch = Math.max(state.punch, 1.8 + level * 0.5);
-
-  // 飛び出すスコア文字（毎回）
+  // スコアポップ（毎回の手応え）
   if (o.score) floatText(x, y, '+' + o.score, heat.colors[0]);
 
-  // カットイン文字（毎回。低コンボは景気づけワード）
-  let text = HYPE_WORDS[(o.combo || 0) % HYPE_WORDS.length];
-  let cls = heat.cls;
-  if (level >= 1) text = heat.name;
-  if (o.milestone && o.combo) text = `${o.combo} COMBO!!`;
+  // カットインはコンボが乗ってから（毎回出すと効かなくなる）
+  if (level >= 1 && !grand) showCutin(heat.name, heat.cls, level);
+
+  // === ここぞ（節目・FEVER・JACKPOT）だけ大盤振る舞い ===
+  if (!grand) return;
+
+  const gLevel = jackpot && !big ? 4 : Math.max(level, 3);
+  const gHeat = HEAT[gLevel];
+
+  megaExplosion(x, y, gHeat, 1 + gLevel * 0.2);
+  radialLines(x, y, gHeat.glow, gLevel);
+  ring(x, y, '#ffffff', 80);
+  ring(x, y, gHeat.glow, 170);
+  impactStar(x, y, gHeat.glow, 1.5);
+  state.aura = { level: gLevel, t: 0, dur: 520 };
+  state.bgFlash = Math.max(state.bgFlash, 0.8);
+  strobe(gHeat.colors, gLevel >= 4 ? 4 : 2, 55);
+  coinShower(gLevel);
+  hitStop(110);
+  shake(3);
+  state.punch = Math.max(state.punch, 2.2);
+
+  let text = gHeat.name;
+  if (o.milestone && combo) text = `${combo} COMBO!!`;
+  if (jackpot) text = 'JACKPOT!!';
   if (o.enteredFever) text = 'FEVER!!';
-  showCutin(text, cls, level);
+  showCutin(text, jackpot ? 'h4' : gHeat.cls, gLevel);
 }
 
 // 多層メガ爆発。放射・上昇噴水・きらめきの3レイヤーを一気に。
@@ -114,35 +132,34 @@ function megaExplosion(x, y, heat, b = 1) {
   const kk = k();
   // 放射（全方向）
   particles.emit(x, y, {
-    count: Math.round(70 * b * kk),
+    count: Math.round(40 * b * kk),
     speed: 8 * b,
     spread: Math.PI * 2,
     colors: heat.colors,
-    size: 5,
+    size: 6,
     life: 750,
     gravity: 0.04,
   });
   // 高速の細かい破片
   particles.emit(x, y, {
-    count: Math.round(50 * b * kk),
+    count: Math.round(26 * b * kk),
     speed: 13 * b,
     spread: Math.PI * 2,
     colors: [...heat.colors, '#ffffff'],
-    size: 3,
-    life: 550,
+    size: 3.5,
+    life: 520,
     gravity: 0.02,
   });
   // 上向き噴水
   particles.emit(x, y, {
-    count: Math.round(30 * b * kk),
+    count: Math.round(18 * b * kk),
     speed: 12 * b,
     spread: Math.PI / 2.5,
     angle: -Math.PI / 2,
     colors: heat.colors,
-    size: 6,
-    life: 950,
+    size: 7,
+    life: 900,
     gravity: 0.06,
-    shape: 'circle',
   });
 }
 
@@ -495,8 +512,6 @@ function drawRadials(ctx, dt) {
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = alpha * 0.5;
     ctx.strokeStyle = r.color;
-    ctx.shadowColor = r.color;
-    ctx.shadowBlur = 8;
     ctx.translate(r.x, r.y);
     ctx.rotate(r.rot);
     for (let n = 0; n < r.count; n++) {
@@ -527,8 +542,6 @@ function drawRings(ctx, dt) {
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = r.color;
-    ctx.shadowColor = r.color;
-    ctx.shadowBlur = 16;
     ctx.lineWidth = r.width * (1 - p) + 1;
     ctx.beginPath();
     ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
@@ -553,8 +566,6 @@ function drawStars(ctx, dt) {
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = alpha;
     ctx.fillStyle = s.color;
-    ctx.shadowColor = s.color;
-    ctx.shadowBlur = 20;
     ctx.translate(s.x, s.y);
     ctx.rotate(s.rot);
     // 十字＋斜め（8方向っぽい閃光）
@@ -627,8 +638,6 @@ function drawShatter(ctx, dt) {
     ctx.translate(s.x, s.y);
     ctx.rotate(s.rot);
     ctx.fillStyle = '#00eaff';
-    ctx.shadowColor = '#c04bff';
-    ctx.shadowBlur = 10;
     ctx.fillRect(-s.size / 2, -s.size / 6, s.size, s.size / 3);
     ctx.restore();
   }

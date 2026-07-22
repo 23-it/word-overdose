@@ -55,7 +55,7 @@ body::before {
     radial-gradient(closest-side, rgba(43, 255, 136, 0.42), transparent) 26% 82% / 46vmax 46vmax no-repeat,
     radial-gradient(closest-side, rgba(255, 149, 0, 0.42), transparent) 78% 78% / 38vmax 38vmax no-repeat,
     radial-gradient(closest-side, rgba(255, 59, 92, 0.42), transparent) 50% 48% / 36vmax 36vmax no-repeat;
-  filter: blur(46px);
+  /* radial-gradient 自体が十分ぼけているので filter: blur は使わない（重いため） */
   z-index: -2;
   animation: drift 22s ease-in-out infinite alternate;
   pointer-events: none;
@@ -97,7 +97,9 @@ body::after {
   z-index: 50;
 }
 
-/* ===== 共通: グラス＆グロー ===== */
+/* ===== 共通: グラス＆グロー =====
+   backdrop-filter は「画面が常時揺れる」ため毎フレーム再合成が走り非常に重い。
+   実際に見せ場となる選択肢カードだけに限定し、他は半透明＋発光で質感を出す。 */
 .glass,
 .btn,
 .choice,
@@ -109,9 +111,11 @@ body::after {
 .settings-row,
 .seg button {
   background: var(--glass);
-  backdrop-filter: blur(13px) saturate(1.5);
-  -webkit-backdrop-filter: blur(13px) saturate(1.5);
   border: 1.5px solid var(--glass-brd);
+}
+.choice {
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
 }
 
 /* ===== 画面切り替え ===== */
@@ -591,16 +595,18 @@ body::after {
   inset: 0;
   pointer-events: none;
   z-index: 40;
-  border: 3px solid transparent;
+  border: 3px solid rgba(255, 46, 151, 0.5);
   box-shadow: inset 0 0 90px rgba(192, 75, 255, 0.55), inset 0 0 40px rgba(0, 234, 255, 0.5);
-  animation: fever-hue 0.5s linear infinite;
+  /* filter アニメは全画面再描画で重いので opacity 脈動（合成のみ）にする */
+  animation: fever-pulse 0.5s ease-in-out infinite alternate;
+  will-change: opacity;
 }
-@keyframes fever-hue {
+@keyframes fever-pulse {
   from {
-    filter: hue-rotate(0deg);
+    opacity: 0.5;
   }
   to {
-    filter: hue-rotate(360deg);
+    opacity: 1;
   }
 }
 
