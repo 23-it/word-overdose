@@ -4,6 +4,7 @@ import { Store } from './core/storage.js';
 import { WORDS } from './data/words.js';
 import * as engine from './audio/engine.js';
 import * as sfx from './audio/sfx.js';
+import * as bgm from './audio/bgm.js';
 import * as effects from './fx/effects.js';
 import { initCanvas, start as startCanvas, registerEffects } from './fx/canvas.js';
 
@@ -69,6 +70,7 @@ function boot() {
   initCanvas(document.getElementById('fx-canvas'));
   effects.initEffects(document.getElementById('app'));
   registerEffects({ update: effects.update, motionBlur: effects.motionBlurOn });
+  bgm.setBeatCallback(effects.beat); // 画面の揺れをBGMのキックに同期
   startCanvas();
 
   // 設定をエフェクト強度に反映

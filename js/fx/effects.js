@@ -634,17 +634,29 @@ function drawShatter(ctx, dt) {
   }
 }
 
+// BGMのキックで呼ばれる拍パンプ。
+let beatEnv = 0;
+export function beat(strength = 1) {
+  beatEnv = Math.max(beatEnv, strength);
+}
+
 let swayT = 0;
 function applyDomTransform(dt) {
   if (!appEl) return;
   swayT += dt;
   let tf = '';
-  // 常時ゆれ（将来BGMに同期。今は一定テンポで揺らす）。reduced では無効。
+  // 常時ゆれ＋BGMの拍パンプ。reduced では無効。
   if (intensity !== 'reduced') {
-    const sx = Math.sin(swayT * 0.0022) * 4 + Math.sin(swayT * 0.0014) * 2.5;
-    const sy = Math.cos(swayT * 0.0018) * 3.5 + Math.sin(swayT * 0.0026) * 1.5;
-    const sr = Math.sin(swayT * 0.0012) * 0.5;
-    tf += `translate(${sx.toFixed(2)}px, ${sy.toFixed(2)}px) rotate(${sr.toFixed(3)}deg) `;
+    // 拍パンプ（キックでドクンと沈む）
+    const pump = beatEnv;
+    beatEnv *= Math.pow(0.003, dt / 1000); // 次の拍までにほぼ減衰
+    if (beatEnv < 0.01) beatEnv = 0;
+    // 連続ドリフト（小さめ、拍が主役）
+    const sx = Math.sin(swayT * 0.0016) * 3;
+    const sy = Math.cos(swayT * 0.0013) * 2 + pump * 7; // 拍で下に沈む
+    const sr = Math.sin(swayT * 0.0011) * 0.4;
+    const psc = 1 - pump * 0.02; // 拍で少し縮む
+    tf += `translate(${sx.toFixed(2)}px, ${sy.toFixed(2)}px) rotate(${sr.toFixed(3)}deg) scale(${psc.toFixed(4)}) `;
   }
   if (state.shake > 0.2) {
     const dx = (Math.random() - 0.5) * state.shake;

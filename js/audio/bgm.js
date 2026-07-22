@@ -23,8 +23,10 @@ const ACID_NOTES = [0, 0, 3, 0, 5, 0, 3, 7, 0, 0, 10, 0, 7, 5, 3, 0];
 const P_RIFF = [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0];
 const RIFF_NOTES = [12, 0, 0, 10, 0, 0, 7, 0, 12, 0, 0, 15, 0, 10, 0, 0];
 const P_CLAP = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]; // 2・4拍にクラップ
-const P_CHORD = [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0]; // FEVERのスーパーソウ和音
+const P_CHORD = [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0]; // スーパーソウ和音
 const CHORD_INTERVALS = [0, 3, 7, 10]; // マイナー7th系
+// 4小節のコード進行（A2基準の半音オフセット）: Am - F - C - G。曲らしさを出す。
+const PROG = [0, -4, 3, -2];
 
 let ctx = null;
 let filter = null; // マスターローパス（ミス時ダック）
@@ -33,6 +35,18 @@ let currentStep = 0;
 let nextStepTime = 0;
 let schedTimer = null;
 let layer = 0; // 0..3
+let barCount = 0; // 進行中の小節（コード切替に使う）
+let beatCb = null; // 拍ごとに呼ぶ視覚同期コールバック
+
+// 画面の拍同期用。bgm がキックのタイミングで strength を渡す。
+export function setBeatCallback(fn) {
+  beatCb = fn;
+}
+function fireBeat(time, strength) {
+  if (!beatCb || !ctx) return;
+  const delay = Math.max(0, (time - ctx.currentTime) * 1000);
+  setTimeout(() => beatCb(strength), delay);
+}
 let fever = false;
 
 function ensureChain() {
@@ -57,6 +71,7 @@ export function startBgm() {
   if (!ensureChain() || running) return;
   running = true;
   currentStep = 0;
+  barCount = 0;
   nextStepTime = ctx.currentTime + 0.05;
   schedTimer = setInterval(scheduler, TICK);
 }
@@ -95,35 +110,43 @@ function scheduler() {
     scheduleStep(currentStep, nextStepTime);
     nextStepTime += stepDur();
     currentStep = (currentStep + 1) % STEPS;
+    if (currentStep === 0) barCount = (barCount + 1) % 1024; // 小節を進める
   }
 }
 
 function scheduleStep(step, time) {
+  // 現在の小節のコード（進行）に応じた root。
+  const chord = semi(PROG[barCount % PROG.length]);
+  const root = ROOT * chord;
+
   // L0: キック + サブベース（常時）
-  if (P_KICK[step]) kick(time);
-  if (P_SUB[step]) sub(ROOT, time);
+  if (P_KICK[step]) {
+    kick(time);
+    fireBeat(time, step === 0 ? 1.2 : 0.85); // 画面の拍同期（頭拍を強く）
+  }
+  if (P_SUB[step]) sub(root, time);
   if (P_CLAP[step]) clap(time); // 2・4拍のクラップは常時（ノリを強く）
 
-  // L1: ハイハット + アシッドベース
+  // L1: ハイハット + アシッドベース（コードに追従）
   if (layer >= 1) {
     if (P_HAT[step]) hat(time, step % 4 === 3 ? 0.28 : 0.16);
-    if (P_ACID[step]) acid(ROOT * 2 * semi(ACID_NOTES[step]), time);
+    if (P_ACID[step]) acid(root * 2 * semi(ACID_NOTES[step]), time);
   }
   // L2: シンセリフ + 常時アルペジオ
   if (layer >= 2) {
-    if (P_RIFF[step]) riff(ROOT * 2 * semi(RIFF_NOTES[step]), time);
+    if (P_RIFF[step]) riff(root * 2 * semi(RIFF_NOTES[step]), time);
     if (step % 2 === 1) {
       const n = PENTA[((step - 1) / 2) % PENTA.length];
-      lead(ROOT * 4 * semi(n), time, 0.06);
+      lead(root * 4 * semi(n), time, 0.06);
     }
   }
   // L3 / FEVER: リードアルペジオ全開＋スーパーソウ和音
   if (layer >= 3 || fever) {
     if (step % 2 === 0) {
       const n = PENTA[(step / 2) % PENTA.length];
-      lead(ROOT * 4 * semi(n), time, 0.12);
+      lead(root * 4 * semi(n), time, 0.12);
     }
-    if (fever && P_CHORD[step]) superSaw(ROOT * 2, CHORD_INTERVALS, time);
+    if (fever && P_CHORD[step]) superSaw(root * 2, CHORD_INTERVALS, time);
   }
 }
 
