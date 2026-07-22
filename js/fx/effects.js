@@ -23,20 +23,21 @@ const state = {
   bgFlash: 0, // 毎回の全画面バックフラッシュ
 };
 
+// 金基調の粒色（コンボ段階で少しずつ白金へ）。
 const COMBO_COLORS = [
-  ['#00f0ff', '#7dfcff'],
-  ['#29ff9b', '#00f0ff'],
-  ['#ffe600', '#ff2bd6'],
-  ['#ff2bd6', '#ffe600', '#00f0ff'],
+  ['#f8ecc0', '#d4af37', '#ffffff'],
+  ['#f8ecc0', '#ffe9a8', '#d4af37'],
+  ['#fff3c8', '#ffd76a', '#d4af37'],
+  ['#ffffff', '#fff0b8', '#ffd76a', '#d4af37'],
 ];
 
-// 激アツ度（0..4）。パチンコの「熱さ」ラダー。
+// 度合い（0..4）。金の輝きが増していくラダー。文言も上質に。
 const HEAT = [
-  { name: '', colors: ['#00f0ff', '#7dfcff', '#ffffff'], glow: '#00f0ff', cls: 'h0' },
-  { name: 'CHANCE!', colors: ['#29ff9b', '#00f0ff', '#ffffff'], glow: '#29ff9b', cls: 'h1' },
-  { name: '激アツ!!', colors: ['#ff3b5c', '#ff2bd6', '#ffe600'], glow: '#ff3b5c', cls: 'h2' },
-  { name: '激熱GOLD!!', colors: ['#ffe600', '#ffb300', '#fff3b0'], glow: '#ffd400', cls: 'h3' },
-  { name: '大当り!!', colors: ['#ff2bd6', '#ffe600', '#00f0ff', '#29ff9b'], glow: '#ffffff', cls: 'h4' },
+  { name: '', colors: ['#f8ecc0', '#d4af37', '#ffffff'], glow: '#d4af37', cls: 'h0' },
+  { name: 'FINE', colors: ['#f8ecc0', '#ffe9a8', '#d4af37'], glow: '#e8c874', cls: 'h1' },
+  { name: 'EXCELLENT', colors: ['#fff3c8', '#ffd76a', '#d4af37'], glow: '#f0d98c', cls: 'h2' },
+  { name: 'BRILLIANT', colors: ['#fff7e0', '#ffe9a8', '#ffd76a'], glow: '#ffd76a', cls: 'h3' },
+  { name: 'MASTERPIECE', colors: ['#ffffff', '#fff7e0', '#ffd76a', '#d4af37'], glow: '#ffffff', cls: 'h4' },
 ];
 
 let cutinEl = null;
@@ -51,8 +52,8 @@ export function initEffects(appElement) {
   document.body.appendChild(cutinEl);
 }
 
-// 低コンボでも出す景気づけワード（毎回カットインを出すため）。
-const HYPE_WORDS = ['NICE!!', 'GREAT!!', 'COOL!!', 'YEAH!!', 'ナイス!!', 'PERFECT!!', 'AWESOME!!'];
+// 低コンボでも出す称賛ワード（毎回カットインを出すため）。上質めの語彙で。
+const HYPE_WORDS = ['GOOD', 'NICE', 'GREAT', 'SUPERB', 'SPLENDID', 'PERFECT', 'SUBLIME'];
 
 // 正解の総合演出（パチンコ風・全部盛り）。game.js からはこれ一本を呼ぶ。
 // o: { combo, multiplier, multiplierUp, enteredFever, milestone, score }
@@ -103,8 +104,8 @@ export function celebrate(x, y, o = {}) {
   let text = HYPE_WORDS[(o.combo || 0) % HYPE_WORDS.length];
   let cls = heat.cls;
   if (level >= 1) text = heat.name;
-  if (o.milestone && o.combo) text = `${o.combo} COMBO!!`;
-  if (o.enteredFever) text = 'FEVER!!';
+  if (o.milestone && o.combo) text = `${o.combo} COMBO`;
+  if (o.enteredFever) text = 'FEVER';
   showCutin(text, cls, level);
 }
 
@@ -333,11 +334,11 @@ export function comboShatter(combo = 0) {
       vr: (Math.random() - 0.5) * 0.4,
     });
   }
-  // 赤い破片も飛ばす
+  // 破片を飛ばす（ミスの色）
   particles.emit(cx, cy, {
     count: Math.round(20 * k()),
     speed: 6,
-    colors: ['#ff3b5c', '#ff2bd6'],
+    colors: ['#c23a54', '#7a2333'],
     size: 5,
     life: 700,
     gravity: 0.08,
@@ -387,7 +388,7 @@ export function update(dt, ctx, w, h) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = state.bgFlash * (intensity === 'reduced' ? 0.4 : 1);
-    ctx.fillStyle = '#2a2350';
+    ctx.fillStyle = '#3a2c10';
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
     state.bgFlash -= dt / 200;
@@ -621,8 +622,8 @@ function drawShatter(ctx, dt) {
     ctx.globalAlpha = alpha;
     ctx.translate(s.x, s.y);
     ctx.rotate(s.rot);
-    ctx.fillStyle = '#ffe600';
-    ctx.shadowColor = '#ff2bd6';
+    ctx.fillStyle = '#d4af37';
+    ctx.shadowColor = '#f8ecc0';
     ctx.shadowBlur = 10;
     ctx.fillRect(-s.size / 2, -s.size / 6, s.size, s.size / 3);
     ctx.restore();
@@ -649,8 +650,8 @@ function applyDomTransform(dt) {
 }
 
 function resolveColor(c) {
-  if (c === 'var(--red)') return '#ff3b5c';
-  if (c === 'var(--cyan)') return '#00f0ff';
+  if (c === 'var(--red)') return '#c23a54';
+  if (c === 'var(--cyan)') return '#f0d98c';
   if (c.startsWith('var(')) return '#ffffff';
   return c;
 }
