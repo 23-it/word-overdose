@@ -22,6 +22,9 @@ const P_ACID = [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0];
 const ACID_NOTES = [0, 0, 3, 0, 5, 0, 3, 7, 0, 0, 10, 0, 7, 5, 3, 0];
 const P_RIFF = [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0];
 const RIFF_NOTES = [12, 0, 0, 10, 0, 0, 7, 0, 12, 0, 0, 15, 0, 10, 0, 0];
+const P_CLAP = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]; // 2・4拍にクラップ
+const P_CHORD = [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0]; // FEVERのスーパーソウ和音
+const CHORD_INTERVALS = [0, 3, 7, 10]; // マイナー7th系
 
 let ctx = null;
 let filter = null; // マスターローパス（ミス時ダック）
@@ -99,20 +102,28 @@ function scheduleStep(step, time) {
   // L0: キック + サブベース（常時）
   if (P_KICK[step]) kick(time);
   if (P_SUB[step]) sub(ROOT, time);
+  if (P_CLAP[step]) clap(time); // 2・4拍のクラップは常時（ノリを強く）
 
   // L1: ハイハット + アシッドベース
   if (layer >= 1) {
-    if (P_HAT[step]) hat(time, step % 4 === 3 ? 0.25 : 0.15);
+    if (P_HAT[step]) hat(time, step % 4 === 3 ? 0.28 : 0.16);
     if (P_ACID[step]) acid(ROOT * 2 * semi(ACID_NOTES[step]), time);
   }
-  // L2: シンセリフ
-  if (layer >= 2 && P_RIFF[step]) {
-    riff(ROOT * 2 * semi(RIFF_NOTES[step]), time);
+  // L2: シンセリフ + 常時アルペジオ
+  if (layer >= 2) {
+    if (P_RIFF[step]) riff(ROOT * 2 * semi(RIFF_NOTES[step]), time);
+    if (step % 2 === 1) {
+      const n = PENTA[((step - 1) / 2) % PENTA.length];
+      lead(ROOT * 4 * semi(n), time, 0.06);
+    }
   }
-  // L3 / FEVER: リードアルペジオ（毎ステップ動く）
-  if ((layer >= 3 || fever) && step % 2 === 0) {
-    const n = PENTA[(step / 2) % PENTA.length];
-    lead(ROOT * 4 * semi(n), time);
+  // L3 / FEVER: リードアルペジオ全開＋スーパーソウ和音
+  if (layer >= 3 || fever) {
+    if (step % 2 === 0) {
+      const n = PENTA[(step / 2) % PENTA.length];
+      lead(ROOT * 4 * semi(n), time, 0.12);
+    }
+    if (fever && P_CHORD[step]) superSaw(ROOT * 2, CHORD_INTERVALS, time);
   }
 }
 
@@ -199,15 +210,56 @@ function riff(freq, t) {
   o2.stop(t + 0.18);
 }
 
-function lead(freq, t) {
+function lead(freq, t, peak = 0.12) {
   const o = ctx.createOscillator();
   o.type = 'sawtooth';
   o.frequency.setValueAtTime(freq, t);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.12, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
   o.connect(g).connect(filter);
   o.start(t);
   o.stop(t + 0.14);
+}
+
+// クラップ（複数のノイズバーストで厚みを出す）。
+function clap(t) {
+  const buf = getNoiseBuffer();
+  if (!buf) return;
+  for (const off of [0, 0.008, 0.016]) {
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1600;
+    bp.Q.value = 1.2;
+    const g = ctx.createGain();
+    const st = t + off;
+    g.gain.setValueAtTime(0.25, st);
+    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.08);
+    src.connect(bp).connect(g).connect(filter);
+    src.start(st);
+    src.stop(st + 0.1);
+  }
+}
+
+// スーパーソウ和音（デチューン多重ソウでぶ厚い）。
+function superSaw(root, intervals, t) {
+  for (const iv of intervals) {
+    const f = root * semi(iv);
+    for (const det of [-12, 0, 12]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f, t);
+      o.detune.setValueAtTime(det, t);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.05, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.connect(g).connect(filter);
+      o.start(t);
+      o.stop(t + 0.38);
+    }
+  }
 }

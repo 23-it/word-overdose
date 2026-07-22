@@ -19,7 +19,15 @@ export function unlockAudio() {
 
   master = ctx.createGain();
   master.gain.value = settings.muted ? 0 : 1;
-  master.connect(ctx.destination);
+  // 大量レイヤーでも歪まないよう軽くコンプ＋リミッタ的に。
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -10;
+  comp.knee.value = 24;
+  comp.ratio.value = 12;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.2;
+  master.connect(comp);
+  comp.connect(ctx.destination);
 
   sfxBus = ctx.createGain();
   sfxBus.gain.value = settings.sfxVolume;

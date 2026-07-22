@@ -1,19 +1,24 @@
-// sfx.js — 効果音のWebAudio合成。超デジタル・ハードなシンセSE。
+// sfx.js — 効果音のWebAudio合成。超ド派手・ジャックポット級のハードデジタルSE。
 // ゲーム側はここの play* を呼ぶだけ。AudioContext未解錠なら黙って無視する。
 
 import { getCtx, getSfxBus, getNoiseBuffer } from './engine.js';
 
 const semi = (n) => Math.pow(2, n / 12);
+// メジャーペンタトニック（駆け上がる爽快感）。コンボで1段ずつ上がる。
+const PENTA = [0, 2, 4, 7, 9];
 
-// 単発オシレータ + エンベロープの基本ボイス。
-function voice(freq, { type = 'square', dur = 0.12, attack = 0.004, peak = 0.5, detune = 0, dest } = {}) {
+// ---- 基本ボイス ----
+
+// 単発オシレータ + エンベロープ。
+function tone(freq, { type = 'square', dur = 0.12, attack = 0.004, peak = 0.4, detune = 0, dest, glideTo } = {}) {
   const ctx = getCtx();
-  if (!ctx) return null;
+  if (!ctx) return;
   const bus = dest || getSfxBus();
   const t = ctx.currentTime;
   const osc = ctx.createOscillator();
   osc.type = type;
   osc.frequency.setValueAtTime(freq, t);
+  if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t + dur);
   if (detune) osc.detune.setValueAtTime(detune, t);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
@@ -22,34 +27,10 @@ function voice(freq, { type = 'square', dur = 0.12, attack = 0.004, peak = 0.5, 
   osc.connect(g).connect(bus);
   osc.start(t);
   osc.stop(t + dur + 0.02);
-  return { osc, g, t };
 }
 
-// 正解: コンボで半音ずつ上昇、10コンボごとにオクターブリセット＋和音化。
-export function playCorrect(combo = 0) {
-  const ctx = getCtx();
-  if (!ctx) return;
-  const step = combo <= 0 ? 0 : (combo - 1) % 12; // 0..11 半音
-  const octaveBoost = Math.floor((combo - 1) / 12) * 0; // ベースは据え置き（暴走防止）
-  const base = 523.25; // C5
-  const freq = base * semi(step + octaveBoost);
-
-  // メイン: FM風（キャリア + モジュレータ）
-  fmStab(freq, { dur: 0.14, peak: 0.5, modRatio: 2.0, modDepth: 180 });
-  // キラッと上物
-  voice(freq * 2, { type: 'triangle', dur: 0.09, peak: 0.18 });
-
-  // 10コンボ達成の節目は和音（メジャートライアド）でご褒美感
-  if (combo > 0 && combo % 10 === 0) {
-    voice(freq * semi(4), { type: 'square', dur: 0.22, peak: 0.28 });
-    voice(freq * semi(7), { type: 'square', dur: 0.26, peak: 0.28 });
-    voice(freq * 2, { type: 'sawtooth', dur: 0.3, peak: 0.2, detune: 8 });
-    blip(freq * 3, 0.3);
-  }
-}
-
-// FM風スタブ。
-function fmStab(freq, { dur = 0.14, peak = 0.5, modRatio = 2, modDepth = 150, dest } = {}) {
+// FMベル（キラキラした金属的アタック）。
+function fmBell(freq, { dur = 0.35, peak = 0.4, modRatio = 3.5, modDepth = 320, dest } = {}) {
   const ctx = getCtx();
   if (!ctx) return;
   const bus = dest || getSfxBus();
@@ -58,7 +39,7 @@ function fmStab(freq, { dur = 0.14, peak = 0.5, modRatio = 2, modDepth = 150, de
   carrier.type = 'sine';
   carrier.frequency.setValueAtTime(freq, t);
   const mod = ctx.createOscillator();
-  mod.type = 'square';
+  mod.type = 'sine';
   mod.frequency.setValueAtTime(freq * modRatio, t);
   const modGain = ctx.createGain();
   modGain.gain.setValueAtTime(modDepth, t);
@@ -66,7 +47,7 @@ function fmStab(freq, { dur = 0.14, peak = 0.5, modRatio = 2, modDepth = 150, de
   mod.connect(modGain).connect(carrier.frequency);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(peak, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.004);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   carrier.connect(g).connect(bus);
   carrier.start(t);
@@ -75,66 +56,145 @@ function fmStab(freq, { dur = 0.14, peak = 0.5, modRatio = 2, modDepth = 150, de
   mod.stop(t + dur + 0.02);
 }
 
-// ミス: ビットクラッシュ風ダウナー（下降ノコギリ＋ノイズ）。
+// サブベースの一撃（ズシン）。
+function subHit(freq = 70, { dur = 0.25, peak = 0.7 } = {}) {
+  const ctx = getCtx();
+  if (!ctx) return;
+  const bus = getSfxBus();
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(freq * 2.4, t);
+  o.frequency.exponentialRampToValueAtTime(freq, t + 0.08);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(peak, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(bus);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+
+// ノイズヒット（シンバル/スパークル/シャワー）。
+function noiseHit(dur = 0.3, peak = 0.35, { type = 'highpass', freq = 6000, dest } = {}) {
+  const ctx = getCtx();
+  const buf = getNoiseBuffer();
+  if (!ctx || !buf) return;
+  const bus = dest || getSfxBus();
+  const t = ctx.currentTime;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filt = ctx.createBiquadFilter();
+  filt.type = type;
+  filt.frequency.value = freq;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(peak, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(filt).connect(g).connect(bus);
+  src.start(t);
+  src.stop(t + dur + 0.02);
+}
+
+// スーパーソウ和音スタブ（ぶ厚い）。
+function chordStab(root, intervals, { dur = 0.3, peak = 0.14, type = 'sawtooth' } = {}) {
+  for (const iv of intervals) {
+    tone(root * semi(iv), { type, dur, peak, detune: -8 });
+    tone(root * semi(iv), { type, dur, peak, detune: 8 });
+  }
+}
+
+// 上昇アルペジオのきらめき。
+function arpUp(root, steps, { gap = 45, dur = 0.14, peak = 0.3, type = 'square' } = {}) {
+  steps.forEach((s, i) => {
+    setTimeout(() => {
+      tone(root * semi(s), { type, dur, peak });
+      tone(root * semi(s) * 2, { type: 'triangle', dur: dur * 0.7, peak: peak * 0.5 });
+    }, i * gap);
+  });
+}
+
+// ---- 公開SE ----
+
+// 正解: コンボでペンタトニックを駆け上がる。節目でファンファーレ＆シンバル。
+export function playCorrect(combo = 0) {
+  const ctx = getCtx();
+  if (!ctx) return;
+  const idx = combo <= 0 ? 0 : combo - 1;
+  const octave = Math.floor(idx / PENTA.length);
+  const degree = PENTA[idx % PENTA.length];
+  const base = 523.25; // C5
+  const freq = base * semi(degree) * Math.pow(2, Math.min(octave, 2));
+
+  // メイン: 明るいFMベル
+  fmBell(freq, { dur: 0.3, peak: 0.42, modRatio: 3, modDepth: 280 });
+  // オクターブ上のキラッ
+  tone(freq * 2, { type: 'triangle', dur: 0.12, peak: 0.2 });
+  // 下支えのサブ
+  subHit(90, { dur: 0.14, peak: 0.4 });
+  // 高域スパークル
+  noiseHit(0.14, 0.16, { type: 'highpass', freq: 9000 });
+
+  // 5コンボごと: 上昇アルペジオのフラッシュ
+  if (combo > 0 && combo % 5 === 0) {
+    arpUp(freq, [0, 4, 7, 12], { gap: 40, dur: 0.12, peak: 0.26 });
+  }
+  // 10コンボごと: ファンファーレ（和音＋ブラス＋シンバル＋大サブ）
+  if (combo > 0 && combo % 10 === 0) {
+    chordStab(freq, [0, 4, 7, 12], { dur: 0.4, peak: 0.13 });
+    tone(freq * semi(7), { type: 'sawtooth', dur: 0.35, peak: 0.22, detune: 10 });
+    noiseHit(0.5, 0.3, { type: 'highpass', freq: 4000 }); // クラッシュ
+    subHit(60, { dur: 0.4, peak: 0.7 });
+  }
+}
+
+// ミス: 大袈裟なダウナー（下降デチューンソウ＋ブザー＋ビットクラッシュノイズ）。
 export function playMiss() {
   const ctx = getCtx();
   if (!ctx) return;
   const bus = getSfxBus();
   const t = ctx.currentTime;
-  // 下降トーン
-  const osc = ctx.createOscillator();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(320, t);
-  osc.frequency.exponentialRampToValueAtTime(60, t + 0.35);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.4, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-  // ざらつくローパス
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(1200, t);
-  lp.frequency.exponentialRampToValueAtTime(200, t + 0.35);
-  osc.connect(lp).connect(g).connect(bus);
-  osc.start(t);
-  osc.stop(t + 0.42);
+  // 下降デチューン2音
+  for (const det of [-14, 14]) {
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(300, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.45);
+    o.detune.setValueAtTime(det, t);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(1400, t);
+    lp.frequency.exponentialRampToValueAtTime(180, t + 0.4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.32, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    o.connect(lp).connect(g).connect(bus);
+    o.start(t);
+    o.stop(t + 0.52);
+  }
+  // ブザー（矩形の不協和）
+  tone(160, { type: 'square', dur: 0.35, peak: 0.22 });
+  tone(160 * semi(1), { type: 'square', dur: 0.35, peak: 0.2 });
   // ノイズのバースト
-  noiseBurst(0.18, 0.25, 800);
-}
-
-function noiseBurst(dur = 0.15, peak = 0.3, cutoff = 2000) {
-  const ctx = getCtx();
-  const buf = getNoiseBuffer();
-  if (!ctx || !buf) return;
-  const bus = getSfxBus();
-  const t = ctx.currentTime;
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.value = cutoff;
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(peak, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(bp).connect(g).connect(bus);
-  src.start(t);
-  src.stop(t + dur + 0.02);
-}
-
-function blip(freq, peak = 0.25) {
-  voice(freq, { type: 'square', dur: 0.05, peak, attack: 0.002 });
+  noiseHit(0.25, 0.3, { type: 'bandpass', freq: 700 });
 }
 
 export function playButton() {
-  blip(880, 0.22);
-  blip(1320, 0.12);
+  tone(880, { type: 'square', dur: 0.05, peak: 0.28, attack: 0.002 });
+  tone(1320, { type: 'square', dur: 0.06, peak: 0.16, glideTo: 1760 });
 }
 
 export function playCountdownTick(n = 3) {
-  // n=3,2,1 で音程が上がる。1(GO)は一番高く長め。
   const map = { 3: 440, 2: 554, 1: 740 };
   const f = map[n] || 440;
-  fmStab(f, { dur: n === 1 ? 0.3 : 0.16, peak: 0.5, modRatio: 1.5, modDepth: 120 });
-  if (n === 1) voice(f * 2, { type: 'triangle', dur: 0.35, peak: 0.2 });
+  if (n === 1) {
+    // GO!: 特大スタブ＋サブ＋シンバル
+    fmBell(f, { dur: 0.4, peak: 0.5, modRatio: 2, modDepth: 200 });
+    chordStab(f, [0, 4, 7], { dur: 0.35, peak: 0.14 });
+    subHit(70, { dur: 0.35, peak: 0.6 });
+    noiseHit(0.4, 0.28, { type: 'highpass', freq: 5000 });
+  } else {
+    fmBell(f, { dur: 0.18, peak: 0.45, modRatio: 1.5, modDepth: 120 });
+    subHit(100, { dur: 0.12, peak: 0.35 });
+  }
 }
 
 export function playFeverStart() {
@@ -142,47 +202,62 @@ export function playFeverStart() {
   if (!ctx) return;
   const bus = getSfxBus();
   const t = ctx.currentTime;
-  // ライザー: ノイズ上昇 + スイープ
-  const osc = ctx.createOscillator();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(200, t);
-  osc.frequency.exponentialRampToValueAtTime(2000, t + 0.6);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.35, t + 0.55);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
-  osc.connect(g).connect(bus);
-  osc.start(t);
-  osc.stop(t + 0.8);
-  // ドロップの一撃
+  // ライザー: ノイズ上昇＋ピッチスイープ＋サイレン
+  const noise = ctx.createBufferSource();
+  const buf = getNoiseBuffer();
+  if (buf) {
+    noise.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(400, t);
+    bp.frequency.exponentialRampToValueAtTime(8000, t + 0.7);
+    bp.Q.value = 2;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(0.4, t + 0.65);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+    noise.connect(bp).connect(ng).connect(bus);
+    noise.start(t);
+    noise.stop(t + 0.9);
+  }
+  const sweep = ctx.createOscillator();
+  sweep.type = 'sawtooth';
+  sweep.frequency.setValueAtTime(200, t);
+  sweep.frequency.exponentialRampToValueAtTime(2400, t + 0.7);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.exponentialRampToValueAtTime(0.3, t + 0.6);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+  sweep.connect(sg).connect(bus);
+  sweep.start(t);
+  sweep.stop(t + 0.8);
+
+  // ドロップの大一撃
   setTimeout(() => {
-    fmStab(130.81, { dur: 0.5, peak: 0.6, modRatio: 1, modDepth: 200 });
-    noiseBurst(0.4, 0.35, 400);
-  }, 600);
+    subHit(55, { dur: 0.6, peak: 0.8 });
+    chordStab(261.63, [0, 3, 7, 10, 12], { dur: 0.6, peak: 0.12 });
+    noiseHit(0.6, 0.35, { type: 'highpass', freq: 3000 });
+  }, 700);
 }
 
 export function playLevelUp() {
-  // 上昇アルペジオ + シマー
   const base = 523.25;
-  const steps = [0, 4, 7, 12, 16];
-  steps.forEach((s, i) => {
-    setTimeout(() => {
-      voice(base * semi(s), { type: 'square', dur: 0.18, peak: 0.35 });
-      voice(base * semi(s) * 2, { type: 'triangle', dur: 0.12, peak: 0.15 });
-    }, i * 70);
-  });
+  arpUp(base, [0, 4, 7, 12, 16, 19], { gap: 65, dur: 0.2, peak: 0.34 });
+  setTimeout(() => {
+    chordStab(base * 2, [0, 4, 7], { dur: 0.5, peak: 0.13 });
+    noiseHit(0.5, 0.25, { type: 'highpass', freq: 7000 });
+  }, 6 * 65);
 }
 
 let tallyTimer = null;
 export function playResultTally() {
-  // ドララララ…転がるようなロール。
   stopTally();
   let i = 0;
   tallyTimer = setInterval(() => {
-    voice(660 + (i % 4) * 40, { type: 'square', dur: 0.04, peak: 0.16 });
+    tone(880 + (i % 5) * 60, { type: 'square', dur: 0.04, peak: 0.14 });
     i++;
-    if (i > 24) stopTally();
-  }, 45);
+    if (i > 28) stopTally();
+  }, 42);
 }
 export function stopTally() {
   if (tallyTimer) {
@@ -193,11 +268,18 @@ export function stopTally() {
 
 export function playNewRecord() {
   const base = 659.25; // E5
-  const melody = [0, 0, 0, 5, 12];
+  // 大ファンファーレ: ブラス風スタブの上昇＋シンバル＋サブ
+  const melody = [0, 4, 7, 12, 7, 12];
   melody.forEach((s, i) => {
     setTimeout(() => {
-      fmStab(base * semi(s), { dur: 0.2, peak: 0.4, modRatio: 2, modDepth: 160 });
-      voice(base * semi(s) * 2, { type: 'triangle', dur: 0.15, peak: 0.18 });
-    }, i * 110);
+      tone(base * semi(s), { type: 'sawtooth', dur: 0.22, peak: 0.26, detune: 8 });
+      tone(base * semi(s), { type: 'sawtooth', dur: 0.22, peak: 0.26, detune: -8 });
+      fmBell(base * semi(s) * 2, { dur: 0.2, peak: 0.24, modRatio: 3, modDepth: 200 });
+    }, i * 120);
   });
+  setTimeout(() => {
+    chordStab(base, [0, 4, 7, 12], { dur: 0.7, peak: 0.13 });
+    subHit(65, { dur: 0.6, peak: 0.7 });
+    noiseHit(0.7, 0.32, { type: 'highpass', freq: 4000 });
+  }, melody.length * 120);
 }
