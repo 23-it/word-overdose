@@ -44,6 +44,8 @@ let cutinEl = null;
 let cutinTimer = 0;
 
 let mblurEl = null; // 方向性モーションブラーの feGaussianBlur
+let veilLight = null; // 拍で光る全画面ヴェール（screen合成）
+let veilDark = null; // 拍で沈む全画面ヴェール
 
 export function initEffects(appElement) {
   appEl = appElement;
@@ -52,6 +54,15 @@ export function initEffects(appElement) {
   cutinEl.id = 'cutin';
   cutinEl.className = 'cutin hidden';
   document.body.appendChild(cutinEl);
+
+  // 拍で明暗を作る全画面ヴェール。opacity だけを毎フレーム変えるので
+  // GPU合成のみで済み、DOMの再描画が起きない（＝軽い）。
+  veilLight = document.createElement('div');
+  veilLight.id = 'veil-light';
+  veilDark = document.createElement('div');
+  veilDark.id = 'veil-dark';
+  document.body.appendChild(veilDark);
+  document.body.appendChild(veilLight);
 
   // 揺れの速度に応じて「動いた向きだけ」ぼかすSVGフィルタ。
   // stdDeviation に x y を別々に入れると方向性ブラーになる。
@@ -405,6 +416,10 @@ export function resetAll() {
   state.stars.length = 0;
   state.floats.length = 0;
   state.bgFlash = 0;
+  beatPhase = 1e9;
+  beatStr = 0;
+  if (veilLight) veilLight.style.opacity = '0';
+  if (veilDark) veilDark.style.opacity = '0';
   if (appEl) appEl.style.transform = '';
   if (cutinEl) {
     cutinEl.className = 'cutin hidden';
@@ -467,6 +482,9 @@ export function update(dt, ctx, w, h) {
     state.flash.alpha -= dt / 250;
     if (state.flash.alpha <= 0) state.flash = null;
   }
+
+  // 拍の明暗ポンプ
+  updateBeatVeils(dt);
 
   // DOMシェイク＆パンチ
   applyDomTransform(dt);
@@ -676,12 +694,44 @@ let leanX = 0, leanV = 0;
 let zoomP = 0, zoomV = 0;
 let beatParity = 0;
 
+// 拍の明暗ポンプ（サイドチェイン風）: キックで光り→沈み→戻る。
+let beatPhase = 1e9; // 直近のキックからの経過ms
+let beatStr = 0;
+
 export function beat(strength = 1) {
   if (intensity === 'reduced') return;
   bounceV += strength * 120; // 下へ蹴る
   leanV += (beatParity ? 1 : -1) * strength * 40; // 交互に左右へ
   zoomV += strength * 0.35; // わずかに寄る
   beatParity ^= 1;
+  beatPhase = 0;
+  beatStr = strength;
+}
+
+// 明暗ヴェールの更新。光は鋭く一瞬、暗はやや遅れて来て緩やかに戻る。
+function updateBeatVeils(dt) {
+  if (!veilLight || !veilDark) return;
+  if (intensity === 'reduced') {
+    veilLight.style.opacity = '0';
+    veilDark.style.opacity = '0';
+    return;
+  }
+  beatPhase += dt;
+  const p = beatPhase;
+  const boost = state.fever ? 1.5 : 1;
+
+  // 光: キックの瞬間に鋭く立ち上がってすぐ消える
+  const light = beatStr * Math.exp(-p / 55);
+  // 暗: 少し遅れて沈み、次の拍までに戻る（ダッキングの呼吸）
+  let dark = 0;
+  if (p > 40) {
+    const q = p - 40;
+    // 次の拍までにしっかり戻す（戻りが遅いと画面が沈みっぱなしになる）
+    dark = beatStr * (1 - Math.exp(-q / 50)) * Math.exp(-q / 180);
+  }
+
+  veilLight.style.opacity = Math.min(0.2, light * 0.09 * boost).toFixed(3);
+  veilDark.style.opacity = Math.min(0.3, dark * 0.22 * boost).toFixed(3);
 }
 
 let swayT = 0;

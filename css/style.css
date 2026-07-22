@@ -511,6 +511,24 @@ body::after {
   }
 }
 
+/* 拍で明暗を作る全画面ヴェール（opacity のみ変更＝GPU合成で軽い） */
+#veil-light,
+#veil-dark {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 55;
+  opacity: 0;
+  will-change: opacity;
+}
+#veil-light {
+  background: #cfe9ff;
+  mix-blend-mode: screen;
+}
+#veil-dark {
+  background: #02010a;
+}
+
 /* カットイン文字（極彩ネオン） */
 .cutin {
   position: fixed;
