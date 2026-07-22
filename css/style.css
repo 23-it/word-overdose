@@ -591,7 +591,8 @@ body::after {
 /* FEVER時の画面フレーム（極彩グロー） */
 #app.fever::before {
   content: '';
-  position: fixed;
+  /* #app に filter(モーションブラー)が乗ると fixed の基準が変わるため absolute で固定 */
+  position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 40;

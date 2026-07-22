@@ -43,6 +43,8 @@ const HEAT = [
 let cutinEl = null;
 let cutinTimer = 0;
 
+let mblurEl = null; // 方向性モーションブラーの feGaussianBlur
+
 export function initEffects(appElement) {
   appEl = appElement;
   // カットイン文字のオーバーレイを用意（最前面）
@@ -50,6 +52,25 @@ export function initEffects(appElement) {
   cutinEl.id = 'cutin';
   cutinEl.className = 'cutin hidden';
   document.body.appendChild(cutinEl);
+
+  // 揺れの速度に応じて「動いた向きだけ」ぼかすSVGフィルタ。
+  // stdDeviation に x y を別々に入れると方向性ブラーになる。
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('width', '0');
+  svg.setAttribute('height', '0');
+  svg.style.cssText = 'position:absolute;width:0;height:0;pointer-events:none';
+  const filter = document.createElementNS(NS, 'filter');
+  filter.setAttribute('id', 'mblur');
+  filter.setAttribute('x', '-20%');
+  filter.setAttribute('y', '-20%');
+  filter.setAttribute('width', '140%');
+  filter.setAttribute('height', '140%');
+  mblurEl = document.createElementNS(NS, 'feGaussianBlur');
+  mblurEl.setAttribute('stdDeviation', '0 0');
+  filter.appendChild(mblurEl);
+  svg.appendChild(filter);
+  document.body.appendChild(svg);
 }
 
 // 低コンボでも出す景気づけワード（毎回カットインを出すため）。
@@ -643,44 +664,95 @@ function drawShatter(ctx, dt) {
   }
 }
 
-// BGMのキックで呼ばれる拍パンプ。
-let beatEnv = 0;
+// BGMのキックで呼ばれる拍グルーヴ。
+// 指数減衰ではなく「ばね」で動かす: 蹴られて沈み、行き過ぎて戻る＝弾む気持ちよさ。
+// さらに拍ごとに左右交互へスイングさせて、頭を振るようなノリを作る。
+const K_BOUNCE = 380, D_BOUNCE = 13; // 縦の沈み込み（やや速く戻る）
+const K_LEAN = 170, D_LEAN = 8; // 横のスイング（ゆったり）
+const K_ZOOM = 300, D_ZOOM = 13; // 拍のズーム
+
+let bounceY = 0, bounceV = 0;
+let leanX = 0, leanV = 0;
+let zoomP = 0, zoomV = 0;
+let beatParity = 0;
+
 export function beat(strength = 1) {
-  beatEnv = Math.max(beatEnv, strength);
+  if (intensity === 'reduced') return;
+  bounceV += strength * 120; // 下へ蹴る
+  leanV += (beatParity ? 1 : -1) * strength * 40; // 交互に左右へ
+  zoomV += strength * 0.35; // わずかに寄る
+  beatParity ^= 1;
 }
 
 let swayT = 0;
+let prevX = 0, prevY = 0; // モーションブラー用に前フレーム位置を保持
+let blurOn = false;
+
 function applyDomTransform(dt) {
   if (!appEl) return;
   swayT += dt;
-  let tf = '';
-  // 常時ゆれ＋BGMの拍パンプ。reduced では無効。
-  if (intensity !== 'reduced') {
-    // 拍パンプ（キックでドクンと沈む）
-    const pump = beatEnv;
-    beatEnv *= Math.pow(0.003, dt / 1000); // 次の拍までにほぼ減衰
-    if (beatEnv < 0.01) beatEnv = 0;
-    // 連続ドリフト（小さめ、拍が主役）
-    const sx = Math.sin(swayT * 0.0016) * 3;
-    const sy = Math.cos(swayT * 0.0013) * 2 + pump * 7; // 拍で下に沈む
-    const sr = Math.sin(swayT * 0.0011) * 0.4;
-    const psc = 1 - pump * 0.02; // 拍で少し縮む
-    tf += `translate(${sx.toFixed(2)}px, ${sy.toFixed(2)}px) rotate(${sr.toFixed(3)}deg) scale(${psc.toFixed(4)}) `;
+  const reduced = intensity === 'reduced';
+  const s = Math.min(0.05, dt / 1000); // 積分ステップ（大きすぎると発散するので上限）
+
+  let tx = 0, ty = 0, rot = 0, scale = 1;
+
+  if (!reduced) {
+    // --- 拍のばねを積分（蹴られて沈み、行き過ぎて戻る）---
+    bounceV += (-K_BOUNCE * bounceY - D_BOUNCE * bounceV) * s;
+    bounceY += bounceV * s;
+    leanV += (-K_LEAN * leanX - D_LEAN * leanV) * s;
+    leanX += leanV * s;
+    zoomV += (-K_ZOOM * zoomP - D_ZOOM * zoomV) * s;
+    zoomP += zoomV * s;
+
+    // --- 連続ドリフト（メニューと同じ、据え置き）---
+    tx += Math.sin(swayT * 0.0016) * 3 + leanX;
+    ty += Math.cos(swayT * 0.0013) * 2 + bounceY;
+    rot += Math.sin(swayT * 0.0011) * 0.4 + leanX * 0.12; // 横揺れに傾きを連動
+    scale *= 1 + zoomP;
   }
+
   if (state.shake > 0.2) {
-    const dx = (Math.random() - 0.5) * state.shake;
-    const dy = (Math.random() - 0.5) * state.shake;
-    tf += `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) `;
+    tx += (Math.random() - 0.5) * state.shake;
+    ty += (Math.random() - 0.5) * state.shake;
     state.shake *= Math.pow(0.001, dt / 1000); // 減衰
     if (state.shake < 0.2) state.shake = 0;
   }
   if (state.punch > 0.01) {
-    const scale = 1 + 0.03 * state.punch;
-    tf += `scale(${scale.toFixed(3)})`;
+    scale *= 1 + 0.03 * state.punch;
     state.punch -= dt / 90;
     if (state.punch < 0.01) state.punch = 0;
   }
-  appEl.style.transform = tf;
+
+  appEl.style.transform =
+    `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) rotate(${rot.toFixed(3)}deg) scale(${scale.toFixed(4)})`;
+
+  // --- 動いた向きに沿ったモーションブラー ---
+  // 静止時はフィルタを完全に外す（付けっぱなしは描画コストになるため）。
+  const dx = tx - prevX;
+  const dy = ty - prevY;
+  prevX = tx;
+  prevY = ty;
+  if (reduced) {
+    if (blurOn) {
+      appEl.style.filter = '';
+      blurOn = false;
+    }
+    return;
+  }
+  // 閾値を少し高めにして、ゆっくりした漂いではブラーを掛けない（負荷対策）。
+  const bx = Math.min(2.6, Math.abs(dx) * 0.5);
+  const by = Math.min(2.6, Math.abs(dy) * 0.5);
+  if (bx > 0.18 || by > 0.18) {
+    if (mblurEl) mblurEl.setAttribute('stdDeviation', `${bx.toFixed(2)} ${by.toFixed(2)}`);
+    if (!blurOn) {
+      appEl.style.filter = 'url(#mblur)';
+      blurOn = true;
+    }
+  } else if (blurOn) {
+    appEl.style.filter = '';
+    blurOn = false;
+  }
 }
 
 function resolveColor(c) {
