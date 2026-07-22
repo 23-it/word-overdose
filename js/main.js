@@ -84,7 +84,17 @@ function boot() {
   navigate('home');
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // 新版SWが有効化されたら一度だけ自動リロード（更新の取りこぼしを防ぐ）。
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      // 起動直後にも更新チェック。
+      reg.update();
+    }).catch(() => {});
   }
 }
 
